@@ -1,0 +1,27 @@
+{
+  "name": "ajax-promise",
+  "version": "1.0.0",
+  "description": "**Ajax**：来自b站课程[【尚硅谷】3小时Ajax入门到精通](https://www.bilibili.com/video/BV1WC4y1b78y)",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lwstkhyl/Ajax-Promise.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/lwstkhyl/Ajax-Promise/issues"
+  },
+  "homepage": "https://github.com/lwstkhyl/Ajax-Promise#readme",
+  "dependencies": {
+    "body-parser": "^1.20.3",
+    "express": "^4.21.0",
+    "nodemon": "^3.1.7"
+  }
+}
