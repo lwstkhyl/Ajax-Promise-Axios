@@ -14,6 +14,10 @@
 - [原生Ajax](#原生ajax)
     - [基本使用](#基本使用)
     - [发送post请求](#发送post请求)
+    - [IE缓存问题](#ie缓存问题)
+    - [请求超时与网络异常处理](#请求超时与网络异常处理)
+    - [取消请求](#取消请求)
+    - [请求重复发送问题](#请求重复发送问题)
 
 <!-- /code_chunk_output -->
 
@@ -78,7 +82,7 @@ xhr.onreadystatechange = () => { //事件绑定，处理服务端返回的结果
   `onreadystatechange`就是当状态改变时触发，因为共有5种状态，所以该事件会触发4次，而我们只在服务器返回全部结果时进行下一步处理，所以要判断状态
 - `status`是响应状态码，以2开头的都表示成功，只有响应成功时才进行下一步处理
 
-**例：建立HTTP服务，并在一个HTML中发送Ajax请求，将响应结果显示在页面中**
+**例1：建立HTTP服务，并在一个HTML中发送Ajax请求，将响应结果显示在页面中**
 - 使用express建立服务，并启动：
     ```js
     const express = require("express");
@@ -115,8 +119,57 @@ xhr.onreadystatechange = () => { //事件绑定，处理服务端返回的结果
         });
     </script>
     ```
+
 点击按钮后：
 ![原生Ajax1](./md-image/原生Ajax1.png){:width=300 height=300}
+
+---
+
+**例2：处理服务端响应的json格式数据**
+- 使用express建立服务，并启动：
+    ```js
+    const express = require("express");
+    const app = express();
+    app.get('/server', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        const data = {
+            name: "abc",
+            age: 20
+        };
+        res.json(JSON.stringify(data));
+    });
+    app.listen(9000);
+    ```
+- HTML页面和Ajax请求：要接收json格式的数据，有两种方法
+  - `onreadystatechange`事件中手动转换：`JSON.parse(xhr.response)`
+  - （推荐）在声明`xhr`对象后设置响应体数据类型：`xhr.responseType = 'json'`，之后`xhr.response`就为对象形式
+    ```html
+    <body>
+        <button>点击获取数据</button>
+        <div id="res"></div>
+    </body>
+    <script>
+        const btn = document.querySelector("button");
+        const res = document.querySelector("#res");
+        btn.addEventListener("click", () => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'http://127.0.0.1:9000/server');
+            xhr.responseType = 'json';
+            xhr.send("");
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState === 4) {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        res.innerHTML = xhr.response;
+                        //res.innerHTML = JSON.parse(xhr.response);
+                    }
+                }
+            };
+        });
+    </script>
+    ```
+
+点击按钮后：
+![原生Ajax3](./md-image/原生Ajax3.png){:width=200 height=200}
 ##### 发送post请求
 在`xhr.open`后，事件绑定前：
 ```js
@@ -161,7 +214,7 @@ app.all('/server', (req, res) => {
 app.listen(9000);
 ```
 ```html
-/* 网页端 */
+<!-- 网页端 -->
 <body>
     <button class="query">发送表单格式请求</button>
     <button class="json">发送json请求</button>
@@ -193,3 +246,116 @@ app.listen(9000);
 ```
 ![原生Ajax2](./md-image/原生Ajax2.png){:width=100 height=100}
 [更多关于CORS请求和预检(preflight)](https://blog.csdn.net/think_A_lot/article/details/125528399)
+##### IE缓存问题
+IE浏览器会缓存服务器响应的结果，导致下一次AJAX请求得到的结果不是服务器响应的最新数据，而是采用上一次缓存的结果
+解决方法：在请求url中加上时间戳，使每次的请求url不同
+```js
+const xhr = new XMLHttpRequest();
+xhr.open('GET', 'http://127.0.0.1:9000/server?t=' + Date.now());
+xhr.send("");
+xhr.onreadystatechange = () => { console.log(xhr.response); };
+```
+##### 请求超时与网络异常处理
+```js
+xhr.timeout = ms时间; //经过多少ms后，如果没有响应则取消请求
+xhr.ontimeout = ()=>{}; //超时的回调函数
+xhr.onerror = ()=>{}; //网络异常的回调函数
+```
+例：
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.get('/timeout', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    setTimeout(() => {
+        res.send("timeout");
+    }, 3000); //延时3s再响应
+});
+app.listen(9000);
+```
+```js
+/* 网页端 */
+const xhr = new XMLHttpRequest();
+xhr.timeout = 2000; //超时2s后取消请求
+xhr.ontimeout = () => alert("连接超时");
+xhr.onerror = () => alert("网络异常");
+xhr.open('GET', 'http://127.0.0.1:9000/timeout');
+xhr.send("");
+xhr.onreadystatechange = () => { console.log(xhr.response); };
+```
+![原生Ajax4](./md-image/原生Ajax4.png){:width=300 height=300}
+如何测试网络异常的效果：
+![原生Ajax5](./md-image/原生Ajax5.png){:width=200 height=200}
+![原生Ajax6](./md-image/原生Ajax6.png){:width=200 height=200}
+##### 取消请求
+在发送请求后，得到服务器响应前，可以手动取消请求
+方法：`xhr.abort()`
+**例：发送请求后，点击另一个按钮取消请求**
+服务端仍用上面的延时3s，要不没时间点取消
+```html
+<!-- 网页端 -->
+<body>
+    <button class="send">发送请求</button>
+    <button class="cancel">取消请求</button>
+</body>
+<script>
+    const send = document.querySelector("button.send");
+    const cancel = document.querySelector("button.cancel");
+    let xhr = null; //在外面声明xhr，要不两个点击事件作用域不同
+    send.addEventListener("click", () => {
+        xhr = new XMLHttpRequest();
+        xhr.open('GET', 'http://127.0.0.1:9000/server');
+        xhr.send("");
+    });
+    cancel.addEventListener("click", () => {
+        if (xhr) xhr.abort();
+    });
+</script>
+```
+![原生Ajax7](./md-image/原生Ajax7.png){:width=200 height=200}
+##### 请求重复发送问题
+即短时间多次发送重复请求，使服务器压力过大
+解决思路：节流阀，当发送时上锁，收到响应结果时解锁
+**例：服务器延迟2s响应，该过程中不能重复发送请求**
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.get('/server', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    setTimeout(() => {
+        res.send(`现在的时间是：${(new Date()).toLocaleString()}`);
+    }, 2000); //延时2s再响应
+});
+app.listen(9000);
+```
+```html
+<!-- 网页端 -->
+<body>
+    <button class="send">发送请求</button>
+    <div id="res"></div>
+</body>
+<script>
+    const send = document.querySelector("button.send");
+    const res = document.querySelector("#res");
+    let have_sent = false; //是否已经发送请求
+    send.addEventListener("click", () => {
+        if (have_sent) return; //如果已经发送就退出
+        have_sent = true; //正在发送，上锁
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', 'http://127.0.0.1:9000/server');
+        xhr.send("");
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    res.innerHTML += (xhr.response + '<br>');
+                    have_sent = false; //解锁
+                }
+            }
+        };
+    });
+</script>
+```
+如图，一直点击发送请求按钮，也是每隔2s发送一次（等到服务器响应之后再发送下一次）
+![原生Ajax8](./md-image/原生Ajax8.png){:width=200 height=200}
