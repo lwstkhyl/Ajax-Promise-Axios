@@ -18,6 +18,9 @@
     - [请求超时与网络异常处理](#请求超时与网络异常处理)
     - [取消请求](#取消请求)
     - [请求重复发送问题](#请求重复发送问题)
+- [jQuery中的Ajax](#jquery中的ajax)
+    - [get和post方法](#get和post方法)
+    - [通用方法ajax](#通用方法ajax)
 
 <!-- /code_chunk_output -->
 
@@ -359,3 +362,120 @@ app.listen(9000);
 ```
 如图，一直点击发送请求按钮，也是每隔2s发送一次（等到服务器响应之后再发送下一次）
 ![原生Ajax8](./md-image/原生Ajax8.png){:width=200 height=200}
+### jQuery中的Ajax
+##### get和post方法
+**get请求**：`$.get(url, [data], [callback], [type])`
+**post请求**：`$.post(url, [data], [callback], [type])`
+- `url`请求地址
+- `data`请求携带的查询字符串(get)或表单数据(post)，以对象形式（键值对）传入
+- `callback`成功得到响应数据时执行，该回调函数接收一个参数，是响应体
+- `type`响应体类型，取值有`xml`、`html`、`script`、`json`、`text`（默认）
+
+**例**：
+```js
+/* 服务端 */
+const express = require("express");
+const body_parser = require("body-parser");
+const app = express();
+const urlencoded_parser = body_parser.urlencoded({ extended: false });
+app.get('/jq', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const { a, b } = req.query;
+    res.json({
+        url: req.url,
+        new_a: a * 10,
+        new_b: b * 10
+    });
+});
+app.post('/jq', urlencoded_parser, (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(`请求url为"${req.url}"，数据为"${JSON.stringify(req.body)}"`);
+});
+app.listen(9000);
+```
+```html
+<!-- 网页端 -->
+<body>
+    <button class="get">发送get请求</button>
+    <button class="post">发送post请求</button>
+</body>
+<script crossorigin="anonymous" src="https://cdn.bootcss.com/jquery/3.4.1/jquery.min.js"></script>
+<script>
+    $(".get").click(() => {
+        $.get(
+            'http://127.0.0.1:9000/jq',
+            { a: 100, b: 200 },
+            data => console.log(data),
+            'json'
+        );
+    });
+    $(".post").click(() => {
+        $.post(
+            'http://127.0.0.1:9000/jq',
+            { name: 'abc', age: 20 },
+            data => console.log(data),
+            "text"
+        );
+    });
+</script>
+```
+![jQuery中的Ajax1](./md-image/jQuery中的Ajax1.png){:width=150 height=150}
+##### 通用方法ajax
+```js
+$.ajax({
+    url: 请求url,
+    data: 请求携带的参数（同get和post方法）,
+    type: 请求类型('GET'/'POST'),
+    success: 成功得到响应数据的回调函数，也是接收一个参数作为响应体数据,
+    dataType: 响应体数据类型,
+    timeout: 超时时间,
+    error: 响应失败的回调函数,
+    headers: 请求头（对象形式）
+});
+```
+**例**：
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.post('/jq', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    setTimeout(() => {
+        res.send();
+    }, 2000);
+});
+app.all('/jq', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    const { a, b } = req.query;
+    res.json({
+        url: req.url,
+        my_header: req.get("my_header"),
+        new_a: a * 10,
+        new_b: b * 10
+    });
+});
+app.listen(9000);
+```
+```js
+/* 网页端 */
+$(".get").click(() => {
+    $.ajax({
+        type: 'GET',
+        url: 'http://127.0.0.1:9000/jq',
+        data: { a: 100, b: 200 },
+        dataType: 'json',
+        success: data => console.log(data),
+        headers: { my_header: 'abc' }
+    });
+});
+$(".post").click(() => {
+    $.ajax({
+        type: 'POST',
+        url: 'http://127.0.0.1:9000/jq',
+        timeout: 1000,
+        error: err => console.log(err.statusText)
+    });
+});
+```
+![jQuery中的Ajax2](./md-image/jQuery中的Ajax2.png){:width=150 height=150}
