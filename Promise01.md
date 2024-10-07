@@ -20,6 +20,8 @@
       - [resolve和reject](#resolve和reject)
       - [all和race](#all和race)
     - [util包的promisify方法](#util包的promisify方法)
+- [Promise自定义封装](#promise自定义封装)
+    - [关键问题](#关键问题)
 
 <!-- /code_chunk_output -->
 
@@ -46,7 +48,20 @@ p.then((value)=>{}, (reason)=>{});
   - `reject`当异步任务失败时调用
 
   这两个函数都可以接收0或1个参数，并将这个参数传给下面的then；如果不想传参，也可以省略不写
-- `p.then`接收两个函数——`onResolved()`和`onRejected()`，分别对应上面的`resolve`和`reject`，相当于把成功/失败时执行的函数移到then中来写
+- `p.then`接收两个函数——`onResolved()`和`onRejected()`，分别对应上面的`resolve`和`reject`（相当于把成功/失败时执行的函数移到then中来写），最后返回一个新的promise对象，因此下面两段代码是不相同的
+    ```js
+    const p = new Promise((resolve, reject) => {
+        resolve('ok');
+    });
+    p.then(value => console.log(value));
+    console.log(p);
+    /*-----------------*/
+    const p = new Promise((resolve, reject) => {
+        resolve('ok');
+    }).then(value => console.log(value));
+    console.log(p);
+    ```
+    第二段代码的p实际上是then方法返回的新promise对象，它的值会在[promise的关键问题](#关键问题)中介绍
 
 注：
 - 执行器函数是和Promise构造函数同时调用的，即代码执行到创建Promise对象时，会立即运行执行器函数里面的代码；而执行器中的`resolve`和`reject`函数都是异步的，会等到外层代码全部执行完再执行（类似于定时器）
@@ -264,3 +279,158 @@ console.log(Promise.race([p1, p2]));
     ```
 
 可以看到，对于其它类似格式的函数，无需手动封装，可以借助util包来转为promise风格的函数
+### Promise自定义封装
+##### 关键问题
+**1. 如何改变promise对象的状态**：
+- 前面提到的resolve和reject函数
+- 抛出错误`throw value`
+    ```js
+    const p = new Promise((resolve, reject) => {
+        throw 'error';
+    });
+    p.catch(reason => console.log(reason));
+    console.log(p);
+    ```
+    ![关键问题1](./md-image/关键问题1.png){:width=100 height=100}
+
+**2.一个promise指定多个成功/失败的回调函数，都会调用吗**
+当promise改变为对应状态时都会调用
+```js
+const p = new Promise((resolve, reject) => {
+    resolve('ok');
+});
+p.then(value => console.log(value + '1'));
+p.then(value => console.log(value + '2'));
+p.then(value => console.log(value + '3'));
+console.log(p);
+```
+![关键问题2](./md-image/关键问题2.png){:width=120 height=120}
+**3. 改变promise状态和指定回调函数的先后顺序**
+即“promise对象中调用resolve和reject”--“使用p.then/catch方法指定回调”谁先执行
+- 都有可能
+  - 如果改变状态函数被写到异步任务（例如定时器），就是先指定回调再改变状态
+  - 如果改变状态函数被写到同步任务（顺序执行的代码），就是先改变状态再指定回调
+- **如何先改变状态再指定回调**：除了上面提到的同步任务，还可以让then方法延时更长时间执行
+- **什么时候可以得到数据（执行回调）**：当状态改变和指定回调都完成时才会执行回调
+
+注：指定回调不是执行回调，指定回调是then方法被执行，执行回调是then方法中的两个参数（回到函数）被执行
+**4. `p.then`返回新promise对象的结果状态由什么决定**
+- 简单来说，由then指定回调函数执行的结果决定
+- 具体来说，如果then中执行的回调函数
+  - 抛出异常，新promise就是reject状态，结果值是抛出的异常值
+  - 返回非promise值，新promise就是resolved，结果值是返回的值
+  - 返回promise对象，就返回这个promise对象
+
+```js
+const p = new Promise((resolve, reject) => {
+    resolve('ok');
+});
+const res1 = p.then(value => { throw ("error") }); //抛出异常
+const res2 = p.then(value => { return 'OK' }); //返回字符串
+const res3 = p.then(value => console.log('OK')); //无返回值（返回undefined）
+const res4 = p.then(value => { //返回一个失败的promise对象
+    return new Promise((resolve, reject) => {
+        reject(value);
+    });
+});
+console.log(res1, res2, res3, res4);
+```
+![关键问题3](./md-image/关键问题3.png){:width=170 height=170}
+**5. 如何串联多个操作任务**
+因为then返回promise对象，可以通过then来链式调用串联多个同步/异步任务
+```js
+const p = new Promise((resolve, reject) => {
+    setTimeout(() => resolve('我是第一个promise'), 1000);
+});
+p.then(value => {
+    console.log(value);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => resolve('我是第二个promise'), 1000);
+    });
+})
+    .then(value => {
+        console.log(value);
+        return new Promise((resolve, reject) => {
+            setTimeout(() => resolve('我是第三个promise'), 1000);
+        });
+    })
+    .then(value => {
+        console.log(value);
+    })
+    .then(value => {
+        console.log(value);
+    });
+```
+![关键问题4](./md-image/关键问题4.png){:width=100 height=100}
+为什么最后是undefined？因为倒数第二个then中回调没返回值，返回的promise对象结果值为undefined
+**6. 异常穿透**
+当使用then链式调用时，可以在最后指定失败的回调，前面任何promise状态变为失败都会传到最后失败的回调中处理，第一个状态变为失败的promise之后的成功回调将不执行，只执行失败回调
+```js
+const p = new Promise((resolve, reject) => {
+    setTimeout(() => reject('我是第一个失败的promise'), 1000);
+});
+p.then(value => {
+    console.log(value);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => reject('我是第二个失败的promise'), 1000);
+    });
+})
+    .then(value => {
+        console.log(value);
+        return new Promise((resolve, reject) => {
+            setTimeout(() => resolve('我是第三个promise'), 1000);
+        });
+    })
+    .then(value => {
+        console.log(value);
+    })
+    .catch(reason => { //当然用then也可以
+        console.log(reason);
+    });
+```
+输出`我是第一个失败的promise`，中间三个`console.log(value)`成功回调不会执行，直接跳到最后的catch失败回调
+```js
+const p = new Promise((resolve, reject) => {
+    setTimeout(() => resolve('我是第一个的promise'), 1000);
+})
+    .then(value => {
+        console.log(value);
+        return new Promise((resolve, reject) => {
+            setTimeout(() => reject('我是第一个失败的promise'), 1000);
+        });
+    })
+    .then(value => {
+        console.log(value);
+    })
+    .catch(reason => { //当然用then也可以
+        console.log(reason);
+    });
+```
+![关键问题5](./md-image/关键问题5.png){:width=50 height=50}
+**7. 中断promise链**
+方法：在then回调中返回一个pending状态的promise对象
+原理：这样then的返回值是pending的promise，状态不改变，后面的回调都不会执行
+```js
+const p = new Promise((resolve, reject) => {
+    setTimeout(() => resolve('我是第一个promise'), 1000);
+});
+p.then(value => {
+    console.log(value);
+    return new Promise((resolve, reject) => {
+        setTimeout(() => resolve('我是第二个promise'), 1000);
+    });
+})
+    .then(value => { //中断promise链
+        return new Promise(() => { });
+    })
+    .then(value => {
+        console.log(value);
+        return new Promise((resolve, reject) => {
+            setTimeout(() => resolve('我是第三个promise'), 1000);
+        });
+    })
+    .then(value => {
+        console.log(value);
+    });
+```
+只输出`我是第一个promise`
