@@ -20,8 +20,9 @@
       - [resolve和reject](#resolve和reject)
       - [all和race](#all和race)
     - [util包的promisify方法](#util包的promisify方法)
-- [Promise自定义封装](#promise自定义封装)
+- [Promise的实现过程](#promise的实现过程)
     - [关键问题](#关键问题)
+    - [实现过程](#实现过程)
 
 <!-- /code_chunk_output -->
 
@@ -279,7 +280,7 @@ console.log(Promise.race([p1, p2]));
     ```
 
 可以看到，对于其它类似格式的函数，无需手动封装，可以借助util包来转为promise风格的函数
-### Promise自定义封装
+### Promise的实现过程
 ##### 关键问题
 **1. 如何改变promise对象的状态**：
 - 前面提到的resolve和reject函数
@@ -434,3 +435,22 @@ p.then(value => {
     });
 ```
 只输出`我是第一个promise`
+##### 实现过程
+- **构造函数**：接收executor执行器作参数，之后函数体内定义状态属性`promiseState`和结果值属性`PromiseResult`、以及resolve和reject函数，并同步调用executor执行器函数
+    主要问题：如何实现`Promise((resolve, reject)=>{})`格式的参数传递？
+    ```js
+    function Promise(func){
+        function resolve(value){}
+        function reject(reason){}
+        func(resolve, reject);
+    }
+    ```
+  - resolve和reject函数：两个功能——修改对象状态、设置对象结果值
+  - 抛出异常时修改promise对象状态：使用try...catch...结构调用执行器函数
+  - 状态只能修改一次：只有状态为pending时才能改状态
+- **then方法**：成功就调用onResolved，失败就调用onRejected
+    主要问题：使用异步的方法，实现状态改变和指定回调都完成时才会执行回调
+    - 状态先改变：直接在then中判断状态来执行对应的回调就行
+    - 状态后改变：此时then中获取到的状态仍为pending，可以在then中保存回调函数——在Promise对象上增加一个属性callback，保存到它身上；最后在resolve和reject函数中调用对应的回调
+- **指定多个回调**：
+
