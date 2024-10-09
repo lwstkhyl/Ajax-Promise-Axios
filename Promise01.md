@@ -451,6 +451,22 @@ p.then(value => {
 - **then方法**：成功就调用onResolved，失败就调用onRejected
     主要问题：使用异步的方法，实现状态改变和指定回调都完成时才会执行回调
     - 状态先改变：直接在then中判断状态来执行对应的回调就行
-    - 状态后改变：此时then中获取到的状态仍为pending，可以在then中保存回调函数——在Promise对象上增加一个属性callback，保存到它身上；最后在resolve和reject函数中调用对应的回调
-- **指定多个回调**：
+    - 状态后改变：此时then中获取到的状态仍为pending，可以在then中保存回调函数——在Promise对象上增加一个属性callback，将两个回调函数组成一个对象，保存到它身上；最后在resolve和reject函数中调用对应的回调
+- **指定多个回调**：将callback属性声明成一个数组，进行保存时将两个回调函数的对象push进去。在resolve和reject函数中调用时使用foreach遍历
+- **then方法的返回值**：将之前then中的代码写进`return new Promise((resolve, reject)=>{})`中，因为Promise对象的executor立即执行，且箭头函数的this穿透，原本的功能可以保留；之后在if状态判断中获取onResolved和onRejected的运行结果，根据这个结果决定到底返回什么
+  - 如果是非promise类型，直接调用新创建的promise的resolve方法
+  - 如果是promise，调用这个返回的promise对象的then方法（递归），两个回调函数分别为`resolve(value)`和`reject(reason)`，相当于为返回的promise对象添加resolve/reject事件
+  - 抛出异常：用trycatch结构包裹上述代码，catch中调用reject函数
+  
+  异步情况的处理：和上面类似，都是修改状态为pending的处理函数，其实只用把上面状态为fulfilled和rejected的处理函数复制到保存的两个回调函数中就可以了
+- **catch方法**：其实直接调then方法，并指定第一个参数为undefined就可以
+    主要问题：如果是.then.then.catch结构，then方法没有传失败的回调，只使用catch指定失败回调，那么在储存的回调函数中，有的对象就只有成功回调，失败回调为undefined，如果最后promise状态变为失败就会导致报错
+    注：then方法也允许不指定成功回调
+    改进方法：在then的return前判断有没有传成功/失败回调，如果没传就设置
+    - 失败回调初始值：`reason=>{throw reason;}`
+    - 成功回调初始值：`value=>{return value;}`
+
+    相当于将成功/失败结果值层层传下去，为什么一个return一个throw？因为要保证传递时状态不变，throw调的是reject，而return调的是resolve
+- **resolve和reject方法**：因为是加在Promise对象而不是实例对象上的，所以用`Promise.resolve`而不是`Promise.prototype.resolve`。对于resolve：实现思路同then，都是判断传入的参数，并创建新Promise对象；而对于reject：直接在新创建的promise对象中reject即可
+- 
 
