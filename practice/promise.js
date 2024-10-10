@@ -8,16 +8,20 @@ function Promise(executor) {
         if (self.PromiseState !== 'pending') return; //状态只能修改一次
         self.PromiseState = 'fulfilled'; //修改promise对象状态
         self.PromiseResult = value; //修改promise对象结果值
-        self.callbacks.forEach(callback => { //如果先指定了回调，这块状态改变，就要执行成功的回调
-            callback.onResolved();
+        setTimeout(() => {
+            self.callbacks.forEach(callback => { //如果先指定了回调，这块状态改变，就要执行成功的回调
+                callback.onResolved();
+            });
         });
     }
     function reject(reason) { //构执行器回调中的reject
         if (self.PromiseState !== 'pending') return;
         self.PromiseState = 'rejected';
         self.PromiseResult = reason;
-        self.callbacks.forEach(callback => {
-            callback.onRejected();
+        setTimeout(() => {
+            self.callbacks.forEach(callback => {
+                callback.onRejected();
+            });
         });
     }
     try {
@@ -25,7 +29,6 @@ function Promise(executor) {
     } catch (e) {
         reject(e); //返回失败的promise对象
     }
-
 }
 //添加then方法
 Promise.prototype.then = function (onResolved, onRejected) {
@@ -56,10 +59,14 @@ Promise.prototype.then = function (onResolved, onRejected) {
             }
         }
         if (this.PromiseState === 'fulfilled') {
-            callback(onResolved);
+            setTimeout(() => {
+                callback(onResolved);
+            });
         }
         if (this.PromiseState === 'rejected') {
-            callback(onRejected);
+            setTimeout(() => {
+                callback(onRejected);
+            });
         }
         if (this.PromiseState === 'pending') { //状态为pending，保存回调函数
             const func = {
@@ -96,5 +103,35 @@ Promise.resolve = function (value) {
 Promise.reject = function (reason) {
     return new Promise((resolve, reject) => {
         reject(reason);
+    });
+}
+//添加all方法
+Promise.all = function (promises) {
+    let fulfilled_num = 0; //有几个promise对象成功了
+    const fulfilled_promises = []; //存放所有成功的promise对象的结果值
+    return new Promise((resolve, reject) => {
+        promises.forEach((promise, index) => {
+            promise.then(value => {
+                fulfilled_num++;
+                fulfilled_promises[index] = value; //为保证顺序不变，不用push
+                if (fulfilled_num === promises.length) { //不能用index，因为可能最后一个promise先成功，这时会导致遍历提前结束（index===length）
+                    resolve(fulfilled_promises); //所有promise都成功，将结果promise的状态也设为成功
+                }
+            }, reason => {
+                reject(reason); //遇到失败的promise，就改变结果promise的状态和结果值。因为状态只能改变一次，无需return
+            });
+        });
+    });
+}
+//添加race方法
+Promise.race = function (promises) {
+    return new Promise((resolve, reject) => {
+        promises.forEach((promise, index) => {
+            promise.then(value => {
+                resolve(value);
+            }, reason => {
+                reject(reason);
+            });
+        });
     });
 }

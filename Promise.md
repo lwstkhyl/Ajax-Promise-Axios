@@ -23,6 +23,8 @@
 - [Promise的实现过程](#promise的实现过程)
     - [关键问题](#关键问题)
     - [实现过程](#实现过程)
+- [async和await](#async和await)
+    - [async](#async)
 
 <!-- /code_chunk_output -->
 
@@ -75,6 +77,7 @@ p.then((value)=>{}, (reason)=>{});
     ```
     ![promise的基本使用1](./md-image/promise的基本使用1.png){:width=70 height=70}
 - then里面两个函数的`value`、`reason`类似于`resolve`、`reject`，都是习惯写法，写成别的也可以
+- 如果promise的构造函数中使用了异步代码，就不能在其中throw抛出错误，这样无法捕获
 
 **例1：利用promise发送ajax请求**
 ```js
@@ -213,7 +216,7 @@ console.log(Promise.reject(p_resolve));
 `Promise.all(promise_list)`/`Promise.race(promise_list)`：都接收一个元素为Promise对象的数组，并返回一个新的Promise对象
 - `all`：
   - 如果传入的Promise数组中有状态为失败的Promise对象，则返回的Promise对象状态也为失败，结果值为数组中第一个失败的Promise对象的结果值
-  - 如果都为成功，则返回的Promise状态就为成功，结果值为所有传入的Promise对象
+  - 如果都为成功，则返回的Promise状态就为成功，结果值为所有传入的Promise对象的结果值组成的数组，且顺序与传入的顺序相同（不是执行完成的顺序）
 - `race`：返回的状态和结果值都取决于数组中第一个状态发生改变的Promise对象
 
 例：`all`
@@ -318,9 +321,9 @@ console.log(p);
 **4. `p.then`返回新promise对象的结果状态由什么决定**
 - 简单来说，由then指定回调函数执行的结果决定
 - 具体来说，如果then中执行的回调函数
-  - 抛出异常，新promise就是reject状态，结果值是抛出的异常值
-  - 返回非promise值，新promise就是resolved，结果值是返回的值
-  - 返回promise对象，就返回这个promise对象
+  - 回调函数中抛出异常，新promise就是reject状态，结果值是抛出的异常值
+  - 回调函数返回非promise值，新promise就是resolved，结果值是返回的值
+  - 回调函数返回promise对象，则then就返回一个新promise对象，它的状态和返回值与这个promise对象相同
 
 ```js
 const p = new Promise((resolve, reject) => {
@@ -468,5 +471,42 @@ p.then(value => {
 
     相当于将成功/失败结果值层层传下去，为什么一个return一个throw？因为要保证传递时状态不变，throw调的是reject，而return调的是resolve
 - **resolve和reject方法**：因为是加在Promise对象而不是实例对象上的，所以用`Promise.resolve`而不是`Promise.prototype.resolve`。对于resolve：实现思路同then，都是判断传入的参数，并创建新Promise对象；而对于reject：直接在新创建的promise对象中reject即可
-- 
+- **all和race方法**：如何判断每个promise是否成功？调用then方法，如果它执行了第一个回调，就是成功，反之为失败；在all方法中，要设置一个计数变量标识有几个promise成功，一个数组存储成功promise的结果值；race方法直接改变结果promise状态即可
 
+---
+
+补充：
+- 一个细节：**then中回调是异步执行的**
+    ```js
+    const p1 = new Promise((resolve, reject) => {
+        console.log(1);
+        resolve();
+    });
+    p1.then(v => {
+        console.log(2);
+    });
+    console.log(3);
+    ```
+    输出顺序：`1`->`3`->`2`
+    **实现方法**：为then的`callback`函数调用添加延时为0的定时器——`this.PromiseState === 'fulfilled'/'rejected'`的两个`callback`以及Promise构造函数中的两个`self.callbacks.forEach`
+- 封装成一个类：
+    ```js
+    class Promise{
+        constructor(){} //构造函数
+        then(){} //添加到类的实例对象上的方法
+        static resolve(){} //添加到类上的方法
+    }
+    ```
+### async和await
+##### async
+使用async声明一个函数：
+```js
+async function 函数名(){
+    return xxx;
+}
+const res = 函数名();
+```
+- 类似于then方法，async函数的返回值`res`是一个promise对象
+  - 如果函数内返回值是一个非promise对象，`res`就是一个成功的promise，结果值为函数返回值
+  - 如果函数内返回值是一个promise对象，`res`的状态和返回值与这个promise对象相同
+- 
