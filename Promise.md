@@ -24,7 +24,9 @@
     - [关键问题](#关键问题)
     - [实现过程](#实现过程)
 - [async和await](#async和await)
-    - [async](#async)
+    - [async函数](#async函数)
+    - [await表达式](#await表达式)
+    - [综合使用](#综合使用)
 
 <!-- /code_chunk_output -->
 
@@ -498,15 +500,161 @@ p.then(value => {
     }
     ```
 ### async和await
-##### async
-使用async声明一个函数：
+##### async函数
+使用`async`关键字声明一个函数：
 ```js
 async function 函数名(){
     return xxx;
 }
+//也可以写成箭头函数的形式↓
+//const 函数名 = () => {};
 const res = 函数名();
 ```
-- 类似于then方法，async函数的返回值`res`是一个promise对象
-  - 如果函数内返回值是一个非promise对象，`res`就是一个成功的promise，结果值为函数返回值
-  - 如果函数内返回值是一个promise对象，`res`的状态和返回值与这个promise对象相同
-- 
+类似于then方法，async函数的返回值`res`是一个promise对象
+- 如果函数内返回值是一个非promise对象，`res`就是一个成功的promise，结果值为函数返回值
+- 如果函数内返回值是一个promise对象，`res`的状态和返回值与这个promise对象相同
+- 如果函数内抛出异常，`res`就是reject状态，结果值是抛出的异常值
+
+```js
+async function func(value) {
+    if (value === 'error') throw 'error';
+    return value;
+}
+console.log(func('error'));
+console.log(func());
+console.log(func('ok'));
+const p1 = new Promise((resolve, reject) => {
+    resolve("我是成功的promise对象");
+});
+const p2 = new Promise((resolve, reject) => {
+    reject("我是失败的promise对象");
+});
+console.log(func(p1));
+console.log(func(p2));
+```
+![async和await1](./md-image/async和await1.png){:width=400 height=400}
+##### await表达式
+使用形式：`const res = await 变量`，可以阻塞代码的执行，即必须等待await执行完毕后才会执行下面的代码
+**必须写在async函数中**，但async函数中可以没有await
+await右侧的变量一般为promise对象，但也可以是其它值
+- 如果变量是成功的promise对象，则await返回其结果值
+- 如果变量是失败的promise对象，就会抛出异常，需要使用`try...catch(e)...`处理，其中`e`为结果值
+- 如果变量是其它值，则直接将此值作为返回值
+
+```js
+async function func() {
+    const p1 = new Promise((resolve, reject) => {
+        resolve("我是成功的promise对象");
+    });
+    const p2 = new Promise((resolve, reject) => {
+        reject("我是失败的promise对象");
+    });
+    console.log(await 12345); //12345
+    console.log(await p1); //我是成功的promise对象
+    try {
+        const res = await p2;
+    } catch (e) {
+        console.log(e); //我是失败的promise对象
+    }
+}
+func();
+```
+##### 综合使用
+**例1**：使用异步读取函数依次读取`1.txt`、`2.txt`、`3.txt`的文件内容，并将其拼接在一起，保证顺序不变
+- 原来的写法：
+    ```js
+    const fs = require("fs");
+    fs.readFile('./1.txt', (err, data1) => {
+        if (err) throw err;
+        fs.readFile('./2.txt', (err, data2) => {
+            if (err) throw err;
+            fs.readFile('./3.txt', (err, data3) => {
+                if (err) throw err;
+                console.log(data1 + data2 + data3);
+            });
+        });
+    });
+    ```
+- 使用then：
+    ```js
+    const fs = require("fs");
+    const util = require("util");
+    const mine_readfile = util.promisify(require("fs").readFile);
+    let res = '';
+    mine_readfile('./1.txt')
+        .then(value => {
+            res += value;
+            return mine_readfile('./2.txt');
+        }, reason => {
+            console.log(reason);
+        })
+        .then(value => {
+            res += value;
+            return mine_readfile('./3.txt');
+        }, reason => {
+            console.log(reason);
+        })
+        .then(value => {
+            res += value;
+            console.log(res);
+        }, reason => {
+            console.log(reason);
+        });
+    ```
+- async和await：
+    ```js
+    const fs = require("fs");
+    const util = require("util");
+    const mine_readfile = util.promisify(require("fs").readFile);
+    async function func() {
+        try {
+            const data1 = await mine_readfile('./1.txt');
+            const data2 = await mine_readfile('./2.txt');
+            const data3 = await mine_readfile('./3.txt');
+            console.log(data1 + data2 + data3);
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    func();
+    ```
+
+**例2**：点击按钮发送Ajax请求
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.get('/server', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send("响应get请求");
+});
+app.listen(9000);
+```
+```js
+/* 网页端 */
+function send_ajax(url = 'http://127.0.0.1:9000/server') {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url);
+        xhr.send();
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(xhr.response);
+                } else {
+                    reject(xhr.status);
+                }
+            }
+        };
+    });
+}
+const get = document.querySelector("button.get");
+get.addEventListener("click", async function () {
+    try {
+        const res = await send_ajax();
+        console.log(res);
+    } catch (e) {
+        console.log(e);
+    }
+});
+```
