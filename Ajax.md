@@ -21,6 +21,10 @@
 - [jQuery中的Ajax](#jquery中的ajax)
     - [get和post方法](#get和post方法)
     - [通用方法ajax](#通用方法ajax)
+- [axios简介](#axios简介)
+    - [get和post方法](#get和post方法-1)
+    - [通用方法axios](#通用方法axios)
+- [fetch方法](#fetch方法)
 
 <!-- /code_chunk_output -->
 
@@ -479,3 +483,152 @@ $(".post").click(() => {
 });
 ```
 ![jQuery中的Ajax2](./md-image/jQuery中的Ajax2.png){:width=150 height=150}
+### axios简介
+**导入**：
+```html
+<script crossorigin="anonymous" src="https://cdn.bootcdn.net/ajax/libs/axios/0.19.2/axios.min.js"></script>
+<!-- 或 -->
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+```
+##### get和post方法
+```js
+axios.default.baseURL = 'xxx'; //可选项，如果在这设置了baseurl，下面的url就可以只写路径
+axios.get(url, { //第二个参数是配置项
+    params: {a: 100, b: 200}, //查询字符串
+    headers: {name: 'abc'}, //请求头
+    ...
+}).then(value => {
+    //value中存储着响应结果、状态等信息
+});
+axios.post(url, { //第二个参数是请求体
+    username: 'abc',
+    password: 'xxx' //以json格式传递
+}, { //第三个参数是配置项（同get）
+    params: {a: 100, b: 200}, //查询字符串
+    headers: {name: 'abc'}, //请求头
+    ...
+}).then(value => {
+    //value中存储着响应结果、状态等信息
+});
+```
+**例**：
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.all('/axios', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    const data = { name: 'abc', age: 20 };
+    res.json(data);
+});
+app.listen(9000);
+```
+```js
+/* 网页端 */
+const get_btn = document.querySelector('.get');
+const post_btn = document.querySelector('.post');
+get_btn.addEventListener("click", () => {
+    axios.get('http://127.0.0.1:9000/axios', {
+        params: { a: 100, b: 200 },
+        headers: { my_header: 'qingqiutou' }
+    }).then(value => {
+        console.log(value);
+    });
+});
+post_btn.addEventListener("click", () => {
+    axios.post('http://127.0.0.1:9000/axios', {
+        username: 'abc',
+        password: 'woshimima'
+    }, {
+        params: { a: 100, b: 200 },
+        headers: { my_header: 'qingqiutou' }
+    }).then(value => {
+        console.log(value);
+    });
+});
+```
+![axios简介1](./md-image/axios简介1.png){:width=200 height=200}
+##### 通用方法axios
+```js
+axios({
+    url: 'xxx',
+    method: 'POST', //请求方法（默认为GET）
+    params: {a: 100, b: 200}, //查询字符串
+    headers: {my_header: 'header'}, //请求头
+    data: {username: 'abc'}, //请求体
+}).then(value => {
+    //value中存储着响应结果、状态等信息
+});
+```
+**例**：
+```js
+/* 网页端 */
+const axios_btn = document.querySelector('.axios');
+axios_btn.addEventListener("click", () => {
+    axios.defaults.baseURL = 'http://127.0.0.1:9000';
+    axios({
+        url: '/axios',
+        method: "POST",
+        params: { a: 100, b: 200 },
+        headers: { my_header: 'qingqiutou' }
+    }).then(value => {
+        console.log(value.status); //响应状态码
+        console.log(value.statusText); //响应状态字符串
+        console.log(value.headers); //响应头
+        console.log(value.data); //响应体
+    });
+});
+```
+![axios简介2](./md-image/axios简介2.png){:width=100 height=100}
+### fetch方法
+是原生JS自带的发送Ajax请求的方法
+```js
+fetch(url, {
+    method: 'POST', //请求方法
+    headers: {my_header: 'header'}, //请求头
+    body: 'username=abc&password=xxx', //请求体
+}).then(response => {
+    //response中存储着响应结果、状态等信息，但需要通过特殊方法获取
+    return response.text(); //获取响应体（字符串）
+    return response.json(); //获取响应体（json形式）
+}).then(value => {
+    console.log(value); //输出
+});
+```
+注：如果需要查询字符串，可以写在url里，例如`http://127.0.0.1:9000?a=1&b=2`
+**例**：
+```js
+const btn = document.querySelector('.fetch');
+btn.addEventListener("click", () => {
+    fetch('http://127.0.0.1:9000/fetch', {
+        method: 'POST',
+        headers: { my_header: 'header' },
+        body: 'username=abc&password=woshimima'
+    }).then(response => {
+        console.log(response);
+        console.log(response.status); //响应状态码
+        console.log(response.statusText); //响应状态字符串
+        console.log(response.headers.get('Content-Type')); //响应头
+        return response.json(); //响应体
+    }).then(value => {
+        console.log(value); //输出
+    });
+});
+```
+![fetch方法1](./md-image/fetch方法1.png){:width=300 height=300}
+**await版本**：
+```js
+async function get_body(url, method = 'GET') { //以json格式返回响应体
+    const res = await fetch(url, {
+        method: method,
+    });
+    return res.json();
+}
+const btn = document.querySelector('.fetch');
+btn.addEventListener("click", () => {
+    get_body('http://127.0.0.1:9000/fetch', 'POST').then(v => {
+        console.log(v); //{name: 'abc', age: 20}
+    });
+});
+```
