@@ -25,6 +25,9 @@
     - [get和post方法](#get和post方法-1)
     - [通用方法axios](#通用方法axios)
 - [fetch方法](#fetch方法)
+- [跨域](#跨域)
+    - [同源策略](#同源策略)
+    - [JSONP](#jsonp)
 
 <!-- /code_chunk_output -->
 
@@ -632,3 +635,126 @@ btn.addEventListener("click", () => {
     });
 });
 ```
+### 跨域
+##### 同源策略
+是浏览器的一种安全机制
+**同源**：网页url与Ajax请求的目标资源url的协议、域名、端口号相同
+**跨域**：违背同源策略，比如http协议向https协议发请求、`a.com`向`b.com`发请求、8000端口向3000端口发请求
+注意：默认情况下，Ajax请求必须遵循同源策略
+**例：同源发送Ajax请求**
+将一个网页作为响应内容，使其协议、域名、端口号都与服务端相同，在这个网页中发送Ajax请求就是同源的
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
+app.get('/data', (req, res) => {
+    res.send("发送数据");
+});
+app.listen(9000);
+```
+```html
+<!-- index.html -->
+<button>点击获取数据</button>
+<script>
+    const btn = document.querySelector("button");
+    btn.addEventListener("click", () => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', '/data'); //因为是同源的，可省略域名、协议、端口号
+        xhr.send();
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    console.log(xhr.response);
+                }
+            }
+        };
+    });
+</script>
+```
+![跨域1](./md-image/跨域1.png){:width=400 height=400}
+##### JSONP
+JSONP(JSON with Padding)是一个非官方的跨域解决方案，只支持get请求
+**原理**：网页中有一些标签天生具有跨域能力，如img、script、iframe、script等，比如在一个HTML文件中使用script标签引入其它的js文件，无论这个js文件的协议、域名、端口号是否与html文件的相同，都可以正常引入。JSONP就是利用script标签的跨域能力发送请求的
+**实现思路**：在html文件中创建script标签，其src为要请求的url，服务端响应一段js代码（因为script标签只能解析js代码，如果是其它格式会报错），此时浏览器就会自动执行响应的js代码
+**例1**：服务端响应一段数据，并将其写到一个div中
+可以先写好对数据的处理函数，服务端响应的js代码直接调用这个函数
+```html
+<!-- 网页端 -->
+<body>
+    <div id="res"></div>
+    <script>
+        function handle(data) {
+            const res = document.querySelector("#res");
+            res.innerHTML = data;
+        }
+    </script>
+    <script src="http://127.0.0.1:9000/jsonp"></script>
+</body>
+```
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.all('/jsonp', (req, res) => {
+    const data = {
+        name: 'abc',
+        age: 20
+    };
+    const str = JSON.stringify(data);
+    res.send(`handle('${str}')`);
+});
+app.listen(9000);
+```
+![跨域2](./md-image/跨域2.png){:width=100 height=100}
+**例2**：有一个文本框，可输入文字（用户名），当输入完成、丢失焦点后，向服务端发送Ajax请求，检测当前用户名是否存在，如不存在则改变文本框边框颜色
+**主要问题：动态创建script标签**
+因为每次触发事件都需要发一次Ajax请求，需要重复创建script标签
+方法：
+```js
+const script = document.createElement("script");
+script.src = "请求的url";
+document.body.appendChild(script); //插入到文档中
+```
+完整实现：
+```html
+<!-- 网页端 -->
+<body>
+    用户名：<input type="text" name="username" id="username">
+    <p class="username"></p>
+    <script>
+        const input = document.querySelector("#username");
+        const p = document.querySelector("p.username");
+        function change_input(res) {
+            input.style.border = res.exist === 1 ? "solid 1px #f00" : "none";
+            p.innerHTML = res.msg;
+        }
+        input.addEventListener("blur", () => {
+            const username = input.value;
+            const script = document.createElement("script");
+            script.src = `http://127.0.0.1:9000/username?username=${username}`;
+            document.body.appendChild(script);
+        });
+    </script>
+</body>
+```
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.all('/username', (req, res) => {
+    const exist_username = ['abc', 'bcd', 'cde']; //存在的用户名
+    const username = req.query.username; //用户输入的用户名
+    const is_exist = exist_username.includes(username);
+    const res_str = JSON.stringify({
+        exist: is_exist ? 1 : 0,
+        msg: is_exist ? "用户名已经存在" : ""
+    }); //将对象转成字符串格式
+    res.send(`change_input(${res_str})`); //因为模板字符串的引号被省略，传参的时候就是{}对象的形式，网页端无需再重转回对象
+});
+app.listen(9000);
+```
+![跨域3](./md-image/跨域3.png){:width=200 height=200}
+![跨域4](./md-image/跨域4.png){:width=150 height=150}
