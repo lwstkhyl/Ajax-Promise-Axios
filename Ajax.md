@@ -28,6 +28,9 @@
 - [跨域](#跨域)
     - [同源策略](#同源策略)
     - [JSONP](#jsonp)
+      - [原生JS](#原生js)
+      - [jQuery](#jquery)
+    - [CORS](#cors)
 
 <!-- /code_chunk_output -->
 
@@ -677,6 +680,7 @@ app.listen(9000);
 ![跨域1](./md-image/跨域1.png){:width=400 height=400}
 ##### JSONP
 JSONP(JSON with Padding)是一个非官方的跨域解决方案，只支持get请求
+###### 原生JS
 **原理**：网页中有一些标签天生具有跨域能力，如img、script、iframe、script等，比如在一个HTML文件中使用script标签引入其它的js文件，无论这个js文件的协议、域名、端口号是否与html文件的相同，都可以正常引入。JSONP就是利用script标签的跨域能力发送请求的
 **实现思路**：在html文件中创建script标签，其src为要请求的url，服务端响应一段js代码（因为script标签只能解析js代码，如果是其它格式会报错），此时浏览器就会自动执行响应的js代码
 **例1**：服务端响应一段数据，并将其写到一个div中
@@ -758,3 +762,114 @@ app.listen(9000);
 ```
 ![跨域3](./md-image/跨域3.png){:width=200 height=200}
 ![跨域4](./md-image/跨域4.png){:width=150 height=150}
+###### jQuery
+方法与原生JS不同，更加简单
+```js
+/* 网页端 */
+$.getJSON('http://127.0.0.1:9000?callback=?', data => {
+    //data即为服务端返回的数据，在这里面可以对其进行处理
+});
+/* 服务端 */
+app.get('xxx', (req, res) => {
+    const callback = req.query.callback;
+    res.send(`${callback}(${str})`); //str为要返回的数据
+});
+```
+注：`getJSON`函数传入url中的`callback=?`查询字符串为固定写法
+可以理解为：jQuery内置了一个可以处理json数据的函数(callback)，只要在服务端调用该函数就行了，不用再自己写一个handle函数
+**例**：点击按钮响应一段数据
+```html
+<!-- 网页端 -->
+<body>
+    <button>发送JSONP请求</button>
+    <div class="res"></div>
+    <script>
+        const btn = $('button').eq(0);
+        const res = $(".res");
+        btn.on("click", () => {
+            $.getJSON("http://127.0.0.1:9000/jsonp?callback=?", data => {
+                res.html(`
+                name: ${data.name},<br>
+                age: ${data.age}
+            `);
+            });
+        });
+    </script>
+</body>
+```
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.get('/jsonp', (req, res) => {
+    const data = {
+        name: 'abc',
+        age: 20
+    };
+    const str = JSON.stringify(data);
+    const callback = req.query.callback;
+    res.send(`${callback}(${str})`);
+});
+app.listen(9000);
+```
+![跨域5](./md-image/跨域5.png){:width=100 height=100}
+![跨域6](./md-image/跨域6.png){:width=100 height=100}
+##### CORS
+CORS(Cross-Origin Resource Sharing)跨域资源共享，是官方的跨域解决方案。跨域资源共享标准新增了一组HTTP首部字段，运行服务器声明哪些资源站有权通过浏览器访问哪些资源
+- 特点：不需在客户端做特殊操作，完全在服务端进行处理
+- 支持get和post请求
+- 原理：设置一个响应头来告诉浏览器，该请求允许跨域，浏览器收到该响应后就会对其放行
+
+可以设置的响应头：
+- `Access-Control-Allow-Origin: 允许跨域的url`
+  注：一般情况下`允许的url`都写成`"*"`，表示允许所有的url，下面类似
+- `Access-Control-Expose-Headers: 允许暴露的响应头`，即允许浏览器通过`xhr.getAllResponseHeaders()`获取哪些响应头
+- `Access-Control-Max-Age: 预检结果缓存多少秒`，在缓存时间内，下一次发送请求就不会预检
+- `Access-Control-Allow-Credentials: true`跨域请求时是否能携带验证信息（如cookie）
+- `Access-Control-Allow-Methods: 请求允许的方法`，默认是get和post
+- `Access-Control-Allow-Headers: 允许的请求头`，即跨域请求允许携带的请求头
+
+[更多关于CORS](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/CORS)
+**例**：点击按钮响应一段数据
+```html
+<!-- 网页端 -->
+<body>
+    <button>发送JSONP请求</button>
+    <div class="res"></div>
+    <script>
+        const btn = document.querySelector("button");
+        const res = document.querySelector(".res");
+        btn.addEventListener("click", () => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', 'http://127.0.0.1:9000/cors');
+            xhr.send();
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState === 4) {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const data = JSON.parse(xhr.response);
+                        res.innerHTML = `
+                            name: ${data.name},<br>
+                            age: ${data.age}
+                        `;
+                    }
+                }
+            };
+        });
+    </script>
+</body>
+```
+```js
+/* 服务端 */
+const express = require("express");
+const app = express();
+app.get('/cors', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*'); //允许跨域
+    const data = {
+        name: 'abc',
+        age: 20
+    };
+    res.json(data);
+});
+app.listen(9000);
+```
+![跨域7](./md-image/跨域7.png){:width=100 height=100}
