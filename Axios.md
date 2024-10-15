@@ -15,6 +15,8 @@
     - [发送Ajax请求](#发送ajax请求)
     - [响应结果的结构](#响应结果的结构)
     - [配置对象的其它参数](#配置对象的其它参数)
+    - [默认配置](#默认配置)
+    - [创建实例对象](#创建实例对象)
 
 <!-- /code_chunk_output -->
 
@@ -169,4 +171,83 @@ axios.patch({}).then(value => {}) //使用方法同post
 - `paramsSerializer`（使用较少）：对查询字符串进行格式转换，比如`/post/a.100/b.200`
 - `data`：请求体，如果是字符串就直接传递（如`a=100&b=200`，如果是对象就转成json字符串传递）
 - `timeout`：超时时间，单位为ms，默认为0（没有超时限制），如果超过这个时间没有得到响应，就会返回reject的promise对象且取消请求
-- 
+- `withCredentials`请求时是否携带cookie，默认不携带
+- `adapter`发送Ajax请求还是HTTP请求
+- `auth`（使用较少）登录时设置用户名和密码
+- `responseType`设置响应体格式，默认是json，会自动转为对象
+- `responseEncoding`响应体编码格式，默认是utf-8
+- `xsrfCookieName`/`xsrfHeaderName`/`withXSRFToken`：cookie相关设置，分别是设置cookie名称/请求头名称/请求是否来自同一域名（起保护作用，避免跨站攻击，即为来自自己网页的请求加上特殊的唯一参数）
+- `onUploadProgress`/`onDownloadProgress`上传/下载时的回调
+- `maxContentLength`/`maxBodyLength`：响应体/请求体的最大尺寸（单位为字节）
+- `validateStatus`什么时候响应成功，默认响应状态码以2开头
+- `maxRedirects`向服务器发送请求时，最大跳转的次数（默认为5次），用在nodejs中
+- `socketPath`socket文件位置
+- `httpAgent`/`httpsAgent`（使用较少）：客户端设置
+- `proxy`：设置代理，常用于爬虫中切换IP
+- `cancelToken`：取消请求设置
+- `decompress`：是否对请求结果解压，默认解压
+##### 默认配置
+`axios.defaults.配置项 = 值`，设置后在axios函数中就可以不写，会自动按这个默认值来
+- `axios.defaults.method`请求类型
+- `axios.defaults.baseurl`请求的baseurl
+- 其实上面提到的所有配置项都可以设置默认值
+
+```js
+axios.defaults.baseURL = "http://127.0.0.1:9000/";
+axios.defaults.method = 'GET';
+axios.defaults.timeout = 1000;
+axios.defaults.params = { id: 100 };
+btn[0].addEventListener("click", () => {
+    axios({
+        url: "/axios",
+    }).then(res => {
+        console.log(res);
+    });
+});
+```
+##### 创建实例对象
+作用是可以设置多套默认配置
+```js
+const axios_obj = axios.create({
+    //设置默认配置项（使用该对象发送的请求都会有这些默认配置项）
+});
+axios_obj({ //使用方式同axios函数
+    //其它配置项
+}).then(value => {
+    //value中存储着响应结果、状态等信息
+});
+//还有get等方法，例如
+axios_obj.get(url, {
+    //其它配置项
+}).then(value => {
+    //value中存储着响应结果、状态等信息
+});
+```
+例：
+```js
+const axios1 = axios.create({
+    baseURL: "http://localhost:3000/",
+    timeout: 3000,
+    method: 'POST'
+});
+const axios2 = axios.create({
+    baseURL: 'http://127.0.0.1:9000',
+    timeout: 3000
+});
+btn[0].addEventListener("click", () => {
+    axios1({
+        url: "/posts",
+        data: {
+            title: "woshibiaoti",
+            views: 300
+        }
+    }).then(res => {
+        console.log(res);
+    });
+});
+btn[1].addEventListener("click", () => {
+    axios2.get("/axios").then(res => {
+        console.log(res);
+    });
+});
+```
