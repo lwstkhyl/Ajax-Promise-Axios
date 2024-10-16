@@ -17,6 +17,8 @@
     - [配置对象的其它参数](#配置对象的其它参数)
     - [默认配置](#默认配置)
     - [创建实例对象](#创建实例对象)
+    - [拦截器](#拦截器)
+    - [取消请求](#取消请求)
 
 <!-- /code_chunk_output -->
 
@@ -251,3 +253,90 @@ btn[1].addEventListener("click", () => {
     });
 });
 ```
+##### 拦截器
+分为请求拦截器和响应拦截器
+- **请求拦截器**：对请求的参数和内容作处理和检测，如果有问题，就取消发送请求
+- **响应拦截器**：在得到响应结果前，先对响应结果进行预处理，例如响应失败时，可以作一些提醒和记录；还可以对响应结果进行一些格式化
+
+```js
+//请求拦截器
+axios.interceptors.request.use(config => {
+    //请求拦截器--成功
+    return config;
+}, error => {
+    //请求拦截器--失败
+    return Promise.reject(error);
+});
+//响应拦截器
+axios.interceptors.response.use(response => {
+    //响应拦截器--成功
+    return response;
+}, error => {
+    //响应拦截器--失败
+    return Promise.reject(error);
+});
+//发送请求
+axios({}).then(v => {
+    //得到响应
+}).catch(r=>{
+    //得到失败响应
+});
+```
+- `config`：配置对象，这意味着我们可以在请求拦截器中对配置对象进行修改。例如`config.params={a:100}`
+- `response`：axios的响应对象，不仅可以更改这个响应对象的内容，还可以通过修改return的值，来改变发送请求中`v`的值。例如`return response.data`，这样`v`就只有响应体内容，便于处理
+如果在`请求拦截器--成功`中抛出异常/返回reject的promise对象，，则会继续依次执行`响应拦截器--失败`和`得到失败响应`中的代码
+**多个拦截器的情况**：
+```js
+axios.interceptors.request.use(); //第一个请求拦截器
+axios.interceptors.request.use(); //第二个请求拦截器
+axios.interceptors.response.use(); //第一个响应拦截器
+axios.interceptors.response.use(); //第二个响应拦截器
+```
+实际执行的顺序是`第二个请求拦截器`->`第一个请求拦截器`->`第一个响应拦截器`->`第二个响应拦截器`
+即请求拦截器先声明的后执行，响应拦截器先声明的先执行
+##### 取消请求
+```js
+let cancel = null; //声明全局变量
+axios({
+    cancelToken: new axios.CancelToken(c=>cancel=c) //在配置对象中设置取消请求的接口
+});
+cancel(); //调用函数即可取消请求
+```
+在取消请求后，会执行axios返回promise对象的失败回调
+**例1**：点击一个按钮发送请求，点击另一个按钮取消
+```js
+let cancel = null;
+btns[0].addEventListener("click", () => {
+    axios({
+        method: 'GET',
+        url: 'http://127.0.0.1:9000/axios',
+        cancelToken: new axios.CancelToken(c => cancel = c)
+    }).then(v => {
+        console.log(v)
+    }).catch(r => {
+        console.log("取消请求成功");
+    });
+});
+btns[1].addEventListener("click", () => {
+    cancel();
+});
+```
+**例2**：对发送请求进行防抖处理，即发送请求后，如果检测到之前已经发送过且还没得到响应，就取消前一次的发送
+方法：将上面的`cancel`变量作为锁，得到响应后将其设为`null`
+```js
+let cancel = null;
+btns[0].addEventListener("click", () => {
+    cancel && cancel(); //如果cancel有值，说明还没得到响应，取消；没值就不取消
+    axios({
+        method: 'GET',
+        url: 'http://127.0.0.1:9000/axios',
+        cancelToken: new axios.CancelToken(c => cancel = c)
+    }).then(v => {
+        console.log(v)
+        cancel = null;
+    }).catch(r => {
+        console.log((new Date()).toLocaleTimeString() + "取消发送");
+    });
+});
+```
+![取消请求](./md-image/取消请求.png){:width=200 height=200}
