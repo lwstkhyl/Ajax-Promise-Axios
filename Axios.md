@@ -19,6 +19,9 @@
     - [创建实例对象](#创建实例对象)
     - [拦截器](#拦截器)
     - [取消请求](#取消请求)
+- [源码分析](#源码分析)
+    - [目录结构](#目录结构)
+    - [axios的创建过程](#axios的创建过程)
 
 <!-- /code_chunk_output -->
 
@@ -340,3 +343,62 @@ btns[0].addEventListener("click", () => {
 });
 ```
 ![取消请求](./md-image/取消请求.png){:width=200 height=200}
+### 源码分析
+##### 目录结构
+- dist文件夹：打包后的最终输出的整体文件
+  - `axios.js`/`axios.min.js`源码
+  - `mine-axios.js`加了一些分析过程的源码
+- lib文件夹：核心代码
+  - adapters文件夹：适配器，定义http和Ajax请求
+    - `http.js`：nodejs发送请求
+    - `xhr.js`：网页中Ajax发送请求
+  - cancel文件夹：取消请求
+  - core文件夹：核心功能
+    - `Axios.js`：Axios构造函数
+    - `buildFullPath.js`：构造完整url的函数
+    - `createError.js`：创建error对象
+    - `dispatchRequest.js`：发送请求（使用上面的适配器）
+    - `enhanceError.js`：更新错误对象
+    - `InterceptorManager.js`：拦截器构造函数
+    - `mergeConfig.js`：合并配置对象
+    - `settle.js`：根据响应状态码改变promise对象状态
+    - `transformData.js`：对请求和响应数据格式进行转换
+  - helper文件夹：各种功能函数
+  - `axios.js`：axios入口文件
+  - `defaults.js`：默认配置
+  - `utils.js`：各种工具函数
+- `index.js`：整个包的入口文件
+##### axios的创建过程
+```html
+<script src="../axios源码（中文注释）/dist/mine-axios.js"></script>
+<script>
+    console.log(axios);
+</script>
+```
+在浏览器中打开，f12->源代码
+![源码分析1](./md-image/源码分析1.png){:width=400 height=400}
+看到这行提示后，按`ctrl+p`找到入口文件`axios.js`，找到第38行，单击行号，设置断点
+![源码分析2](./md-image/源码分析2.png){:width=170 height=170}
+之后刷新页面
+![源码分析3](./md-image/源码分析3.png){:width=200 height=200}
+点击上下箭头即可查看上/下个函数调用
+```js
+//1.通过默认配置创建axios函数(axios.js)
+var axios = createInstance(defaults);
+//2.创建一个实例对象context(axios.js)
+var context = new Axios(defaultConfig);
+//3.Axios构造函数(Axios.js)
+function Axios(instanceConfig){
+    //给将Axios实例对象添加默认配置对象，拦截器对象
+}
+utils.forEach(['delete', 'get', 'head', 'options'], function forEachMethodNoData(method) { //给Axios原型添加各种发送请求的方法，这样Axios的原型对象就有了各种属性
+    Axios.prototype[method] = ...;
+});
+//4.将request方法的this指向context，并返回新函数instance(axios.js)
+var instance = bind(Axios.prototype.request, context);
+//5.将Axios.prototype和实例对象context的方法和属性都添加到instance函数身上(axios.js)
+utils.extend(instance, Axios.prototype, context);
+utils.extend(instance, context);
+//总的来说，就是先创建一个函数，再给它添加属性
+```
+最终结果：`instance`（代码中的axios对象）既是一个函数，又是一个有很多属性的对象，所以我们可以写`axios({})`，也可以写`axios.get({})`
