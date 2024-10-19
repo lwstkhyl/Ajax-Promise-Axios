@@ -22,6 +22,7 @@
 - [源码分析](#源码分析)
     - [目录结构](#目录结构)
     - [axios的创建过程](#axios的创建过程)
+    - [发送请求](#发送请求)
 
 <!-- /code_chunk_output -->
 
@@ -402,3 +403,124 @@ utils.extend(instance, context);
 //总的来说，就是先创建一个函数，再给它添加属性
 ```
 最终结果：`instance`（代码中的axios对象）既是一个函数，又是一个有很多属性的对象，所以我们可以写`axios({})`，也可以写`axios.get({})`
+
+---
+
+**模拟实现axios的创建**：
+```js
+//Axios构造函数
+function Axios(config) {
+    this.default = config; //创建default默认配置对象
+    this.intercepters = { //拦截器
+        request: {},
+        response: {}
+    };
+}
+//原型上添加各种请求方法
+Axios.prototype.request = function (config) { //发送Ajax请求（是各种发送请求函数的公用方法）
+    console.log(`发送${config.method}请求`);
+}
+Axios.prototype.get = function (config) { //发送get请求
+    return this.request({ method: 'GET' });
+}
+Axios.prototype.post = function (config) { //发送post请求
+    return this.request({ method: 'POST' });
+}
+//Axios实例化
+function create_instance(config) {
+    const context = new Axios(config); //实例化对象，此时它可以调用方法，但不能当成函数使用
+    const instance = Axios.prototype.request.bind(context); //instance是一个函数，它的this是context对象。此时instance不能调用方法
+    //将Axios原型对象的方法添加到instance上
+    Object.keys(Axios.prototype).forEach(key => { //遍历原型对象的方法（键名）
+        instance[key] = Axios.prototype[key].bind(context); //让this始终为context对象
+    });
+    //将实例对象的default和拦截器属性添加到instance上
+    Object.keys(context).forEach(key => { //遍历实例对象的属性（键名）
+        instance[key] = context[key];
+    });
+    return instance;
+}
+const axios = create_instance();
+axios({ method: 'GET' }); //当成函数使用
+axios.post(); //当成对象，调用方法
+```
+![源码分析4](./md-image/源码分析4.png){:width=70 height=70}
+- 构造函数：默认配置项和拦截器
+- 原型对象：发送请求的方法
+- 实例化：
+  - 创建实例对象
+  - 将发送请求的公用方法`request`绑定到`instance`上，this指向刚才创建的实例对象。此时`instance`只是函数
+  - 为`instance`添加原型对象上其它发送请求的方法。此时`instance`也是对象
+  - 为`instance`添加构造函数中的属性
+- 返回创建的`instance`（既是函数又是对象）
+##### 发送请求
+因为`axios`就是上面的`instance`，是通过绑定`request`创建的，所以`axios`函数实际就是`request`函数
+```html
+<script src="../axios源码（中文注释）/dist/mine-axios.js"></script>
+<script>
+    axios({
+        method: 'GET',
+        url: 'http://localhost:3000/posts',
+    }).then(r => {
+        console.log(r);
+    });
+</script>
+```
+f12->ctrl+p，在Axios.js的39行（request函数处）设置断点
+```js
+//对传入的config配置对象进行处理
+if (typeof config === 'string') {}
+//将默认配置与传入的配置对象进行合并
+config = mergeConfig(this.defaults, config);
+//设定请求方法
+if (config.method) {}
+//创建拦截器中间件：第一个参数dispatchRequest用来发送请求，第二个为undefined用来补位
+var chain = [dispatchRequest, undefined];
+//创建一个成功的promise，其结果值合并后的请求配置
+var promise = Promise.resolve(config);
+//因为我们没用拦截器，所以这部分拦截器代码不会执行
+while (chain.length) {
+    //依次取出 chain 的回调函数, 并执行
+    promise = promise.then(chain.shift(), chain.shift()); //因为promise是成功的，所以会执行第一个函数dispatchRequest
+    //dispatchRequest的返回结果会决定then的返回结果，即下一次循环中promise的值
+}
+
+//进入dispatchRequest.js
+//如果被取消的请求被发送出去，就抛出错误
+throwIfCancellationRequested(config);
+//处理头信息、请求体、配置项等
+config.headers = config.headers || {};
+config.data = transformData()
+config.headers = utils.merge()
+utils.forEach()
+//获取适配器对象
+var adapter = config.adapter || defaults.adapter;
+//调用adapter(config)发送请求，它返回请求后promise对象
+return adapter(config).then(function onAdapterResolution(response) {
+    //成功的回调
+    throwIfCancellationRequested(config);
+    //对响应结果格式化
+    response.data = transformData(
+        response.data,
+        response.headers,
+        config.transformResponse
+    );
+    //因为response是一个对象，所以then返回一个成功的promise对象，结果值为response
+    return response;
+}, function onAdapterRejection(reason) {});
+
+//回到Axios.js
+promise = promise.then(chain.shift(), chain.shift());
+//chain.shift()返回一个成功的promise对象，因此promise也是成功的，结果值为上面的response
+return promise; //axios({})函数的返回值
+
+//回到调用axios函数处
+axios({
+    method: 'GET',
+    url: 'http://localhost:3000/posts',
+}) //是一个成功的promise对象，结果值为response
+    .then(r => { //获取response并输出
+        console.log(r);
+    });
+```
+总的来说，就是`request`方法调用`dispatchRequest`，其中调用`adapter`函数(xhr.js)，最后将结果一层一层往外传递
