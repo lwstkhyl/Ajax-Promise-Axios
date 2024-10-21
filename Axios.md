@@ -23,6 +23,7 @@
     - [目录结构](#目录结构)
     - [axios的创建过程](#axios的创建过程)
     - [发送请求](#发送请求)
+    - [拦截器](#拦截器-1)
 
 <!-- /code_chunk_output -->
 
@@ -495,7 +496,7 @@ config.headers = utils.merge()
 utils.forEach()
 //获取适配器对象
 var adapter = config.adapter || defaults.adapter;
-//调用adapter(config)发送请求，它返回请求后promise对象
+//调用adapter(config)发送请求，它也返回一个promise对象（具体值见下面的模拟实现）
 return adapter(config).then(function onAdapterResolution(response) {
     //成功的回调
     throwIfCancellationRequested(config);
@@ -524,3 +525,161 @@ axios({
     });
 ```
 总的来说，就是`request`方法调用`dispatchRequest`，其中调用`adapter`函数(xhr.js)，最后将结果一层一层往外传递
+
+---
+
+**模拟实现axios发送请求**：
+```js
+function Axios(config) { //构造函数
+    this.config = config;
+}
+Axios.prototype.request = function (config) { //发送请求
+    //略过处理config的部分，直接创建成功的promise对象
+    const promise = Promise.resolve(config);
+    //声明数组
+    const chains = [dispatch_request, undefined];
+    //遍历数组（为简化操作，这里直接调用promise的then方法执行dispatch_request）
+    const res = promise.then(chains[0], chains[1]);
+    //返回调用结果
+    return res;
+}
+function dispatch_request(config) { //dispatchRequest函数，返回promise对象，包括响应结果
+    //调用适配器
+    return xhr_adapter(config).then(response => {
+        //对响应的结果进行处理（这里就不作处理了）
+        return response;
+    }, error => {
+        throw error;
+    });
+}
+function xhr_adapter(config) { //adapter适配器，返回promise对象，包括响应结果
+    return new Promise((resolve, reject) => {
+        //发送Ajax请求（这里只考虑请求方法和url）
+        const xhr = new XMLHttpRequest();
+        xhr.open(config.method, config.url);
+        xhr.send();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve({ //如果请求发送成功就resolve
+                        config: config, //配置对象
+                        data: xhr.response, //响应体
+                        header: xhr.getAllResponseHeaders(), //响应头
+                        request: xhr, //xhr请求对象
+                        status: xhr.status, //响应状态码
+                        statusText: xhr.statusText //响应状态字符串
+                    });
+                } else { //失败就reject
+                    reject(new Error(`请求失败，失败状态码为${xhr.status}`));
+                }
+            }
+        }
+    });
+}
+const axios = Axios.prototype.request.bind(null); //创建实例对象（为了方便就不进行绑定操作了）
+axios({
+    method: 'GET',
+    url: 'http://localhost:3000/posts',
+}).then(r => {
+    console.log(r);
+});
+```
+![源码分析5](./md-image/源码分析5.png){:width=150 height=150}
+- 适配器函数`xhr_adapter`创建一个promise对象，在其中发送请求，过程类似于promise课程中“点击按钮发送Ajax请求”，都是请求成功就`resolve(请求结果)`，失败就`reject`
+- 外层的`dispatchRequest`函数接收这个promise对象，并为其指定then方法，将传入resolve中的请求结果取出，将这个结果作为一个成功promise的结果值，最后将这个promise对象传出
+- `promise.then(chain.shift(), chain.shift())`中执行`chain.shift()`（即`dispatchRequest`函数），它返回上面传出的成功promise对象，因此该语句也返回成功的promise对象，将其作为request函数的返回结果
+- 最后，这个promise对象传给`axios`函数调用处，调用then方法获取请求结果
+
+补充：
+```js
+const promise = Promise.resolve(config); //promise对象的结果值为config
+const res = promise.then(dispatch_request, undefined);
+```
+该过程中，`dispatch_request`实际接收到了`config`，相当于
+```js
+const res = promise.then(config=>{
+    dispatch_request(config);
+}, undefined);
+```
+##### 拦截器
+```html
+<script>
+    axios.interceptors.request.use(config => { //设置拦截器
+    //请求拦截器--成功
+    return config;
+}, error => {
+    //请求拦截器--失败
+    return Promise.reject(error);
+});
+    axios({ //发送请求
+        method: 'GET',
+        url: 'http://localhost:3000/posts',
+    }).then(r => {
+        console.log(r);
+    });
+</script>
+```
+在`axios.interceptors.request.use`处打断点
+```js
+//设置拦截器
+//Axios.js
+function Axios(instanceConfig) {
+    this.interceptors = {
+        request: new InterceptorManager(), //调用的实际是InterceptorManager对象的use方法
+        response: new InterceptorManager()
+    };
+}
+//InterceptorManager.js
+function InterceptorManager() {
+  this.handlers = []; //一个空数组
+}
+InterceptorManager.prototype.use = function use(fulfilled, rejected) {
+  this.handlers.push({ //将use里面传入的两个回调函数封装成一个对象，并压入handlers
+    fulfilled: fulfilled,
+    rejected: rejected
+  }); //每设置一个拦截器，就把回调放入handlers中
+  return this.handlers.length - 1;
+};
+//响应拦截器同理，它也有一个handlers
+
+//发送请求
+//Axios.js
+var chain = [dispatchRequest, undefined];
+var promise = Promise.resolve(config);
+this.interceptors.request.forEach(function unshiftRequestInterceptors(interceptor) { 
+    //这个forEach不是js的，是作者自己封装的，用于遍历其中的handlers属性
+    //将请求拦截器依次压入数组的最前面
+    chain.unshift(interceptor.fulfilled, interceptor.rejected); //先进后出
+});
+this.interceptors.response.forEach(function pushResponseInterceptors(interceptor) {
+    //将相应拦截器依次压入数组的最尾部
+    chain.push(interceptor.fulfilled, interceptor.rejected); //后进后出
+});
+while (chain.length) {
+    //依次取出 chain 的回调函数，并执行
+    promise = promise.then(chain.shift(), chain.shift()); //每次shift()都会改变chain的长度
+}
+return promise;
+```
+总结：设置拦截器的`use`函数其实只是把两个回调保存在了`handlers`里面，等到`request`函数调用时才真正绑定和执行
+补充：
+- 为什么添加拦截器时要一个unshift一个push？因为请求拦截要在dispatch之前执行，所以是在前面插入，响应拦截器在之后执行，在后面插入
+- `promise.then(chain.shift(), chain.shift())`详解：
+    ```js
+    axios.interceptors.request.use(function one(config){}, function one(error){}); //第一个请求拦截器
+    axios.interceptors.request.use(function two(config){}, function two(error){}); //第二个请求拦截器
+    axios.interceptors.response.use(); //第一个响应拦截器
+    axios.interceptors.response.use(); //第二个响应拦截器
+    ```
+    forEach遍历之后chain的值：
+    ![源码分析6](./md-image/源码分析6.png){:width=200 height=200}
+    每两个元素为一对，是一个拦截器的成功和失败回调
+    这里需要说明的是：不管`promise`是成功还是失败，`then(chain.shift(), chain.shift())`中两个shift函数都会执行，都会从chain中弹出两个元素，then只决定是否调用这两个回调
+    因此，每次给promise添加的then方法为：
+    - `then(two(config), two(error))`
+    - `then(one(config), one(error))`
+    - `then(dispatchRequest, undefined)`
+    - `then((response), (error))`
+    - `then((response), (error))`
+
+    这样就可以实现：根据`promise`的状态来执行拦截器的对应回调；因为promise的异常穿透特性，当遇到失败（执行error回调）时，会依次执行后面的失败回调。这也可以解释为什么初始化`chain`时需要`undefined`占位
