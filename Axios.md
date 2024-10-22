@@ -24,6 +24,7 @@
     - [axios的创建过程](#axios的创建过程)
     - [发送请求](#发送请求)
     - [拦截器](#拦截器-1)
+    - [取消请求](#取消请求-1)
 
 <!-- /code_chunk_output -->
 
@@ -577,6 +578,9 @@ function xhr_adapter(config) { //adapter适配器，返回promise对象，包括
     });
 }
 const axios = Axios.prototype.request.bind(null); //创建实例对象（为了方便就不进行绑定操作了）
+```
+```js
+//测试
 axios({
     method: 'GET',
     url: 'http://localhost:3000/posts',
@@ -683,3 +687,122 @@ return promise;
     - `then((response), (error))`
 
     这样就可以实现：根据`promise`的状态来执行拦截器的对应回调；因为promise的异常穿透特性，当遇到失败（执行error回调）时，会依次执行后面的失败回调。这也可以解释为什么初始化`chain`时需要`undefined`占位
+
+---
+
+**模拟实现axios拦截器**：
+```js
+//创建Axios
+function Axios(config) { //Axios构造函数
+    this.config = config;
+    this.interceptors = {
+        request: new interceptors_manager(),
+        response: new interceptors_manager()
+    }
+}
+Axios.prototype.request = function (config) { //request函数
+    let promise = Promise.resolve(config); //创建promise对象
+    const chains = [dispatch_request, undefined]; //创建chains数组
+    this.interceptors.request.handlers.forEach(item => { //将请求拦截器中函数压入chains中
+        chains.unshift(item.resolved, item.rejected);
+    });
+    this.interceptors.response.handlers.forEach(item => { //将响应拦截器中函数压入chains中
+        chains.push(item.resolved, item.rejected);
+    });
+    while (chains.length > 0) { //当chains里还有元素时
+        promise = promise.then(chains.shift(), chains.shift());
+    }
+    return promise;
+}
+function dispatch_request(config) { //这里就不写发送请求的代码了，直接返回请求结果
+    return new Promise((resolve, reject) => {
+        resolve({
+            status: 200,
+            statusText: "OK"
+        });
+    });
+}
+//创建实例，添加拦截器属性
+const context = new Axios({});
+const axios = Axios.prototype.request.bind(context); //axios函数，注意改request的this属性为实例对象，要不request中获取不到拦截器
+Object.keys(context).forEach(key => {
+    axios[key] = context[key];
+});
+
+//创建拦截器
+function interceptors_manager() { //拦截器管理器构造函数
+    this.handlers = [];
+}
+interceptors_manager.prototype.use = function (resolved, rejected) { //use方法
+    this.handlers.push({ //将传入的回调压入数组
+        resolved,
+        rejected
+    });
+}
+```
+```js
+//测试
+axios.interceptors.request.use(function one(config) {
+    console.log("第一个请求拦截器");
+    return config;
+}, function one(error) { }); //第一个请求拦截器
+axios.interceptors.request.use(function two(config) {
+    console.log("第二个请求拦截器");
+    return config;
+}, function two(error) { }); //第二个请求拦截器
+axios.interceptors.response.use(function (response) {
+    console.log("第一个响应拦截器");
+    return response;
+}, function (response) { }); //第一个响应拦截器
+axios.interceptors.response.use(function (response) {
+    console.log("第二个响应拦截器");
+    return response;
+}, function (response) { }); //第二个响应拦截器
+axios({}).then(r => {
+    console.log(r);
+});
+```
+![源码分析7](./md-image/源码分析7.png){:width=150 height=150}
+##### 取消请求
+```js
+let cancel = null;
+axios({
+    cancelToken: new axios.CancelToken(c => cancel = c)
+});
+cancel();
+```
+执行过程：
+```js
+//CancelToken.js
+//创建cancelToken对象
+function CancelToken(executor) { //构造函数
+    if (typeof executor !== 'function') { //执行器函数必须是一个函数
+        throw new TypeError('executor must be a function.');
+    }
+    var resolvePromise;
+    this.promise = new Promise(function promiseExecutor(resolve) { //在实例对象上添加promise属性
+        resolvePromise = resolve; //将修改promise对象成功状态的resolve函数暴露出去
+        //结果：resolvePromise()时就可将promise状态改为成功
+    });
+    var token = this; //token指向当前的实例对象
+    executor(function cancel(message) { //调用我们传入的执行器函数`c => cancel = c`，c就是这里传入的参数`function cancel(message){}`
+        //目的：将修改promise状态的函数暴露出去（赋值给外面的cancel
+        if (token.reason) return;
+        token.reason = new Cancel(message);
+        resolvePromise(token.reason); //让promise的状态变为成功
+        //结果：外面我们定义的cancel函数执行，则resolvePromise也执行，取消请求
+    });
+}
+//xhr.js
+if (config.cancelToken) { //如果配置了cancelToken，则设置cancelToken.promise的成功回调
+    //因为promise必定是成功的，所以只指定成功回调就够了
+    config.cancelToken.promise.then(function onCanceled(cancel) {
+        if (!request) return;
+        request.abort(); //取消请求
+        reject(cancel);
+        request = null;
+    });
+}
+```
+总结：最外面的`cancer`函数执行->`function cancel(message) {}`执行->`resolvePromise`执行->`promise.resolve`执行->状态变为成功->执行then的成功回调->回调中的`request.abort()`执行（这实际就是Ajax的abort方法），取消请求
+因为`abort`函数是否要执行、什么时候执行都不确定，把它放在promise对象的成功回调中。如果想让它执行，只要改变promise对象的状态即可。然后将改变状态的函数暴露给最外层的`cancer`，让程序员自己决定什么时候调用
