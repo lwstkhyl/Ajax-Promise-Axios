@@ -25,6 +25,7 @@
     - [发送请求](#发送请求)
     - [拦截器](#拦截器-1)
     - [取消请求](#取消请求-1)
+    - [总结](#总结)
 
 <!-- /code_chunk_output -->
 
@@ -806,3 +807,160 @@ if (config.cancelToken) { //如果配置了cancelToken，则设置cancelToken.pr
 ```
 总结：最外面的`cancer`函数执行->`function cancel(message) {}`执行->`resolvePromise`执行->`promise.resolve`执行->状态变为成功->执行then的成功回调->回调中的`request.abort()`执行（这实际就是Ajax的abort方法），取消请求
 因为`abort`函数是否要执行、什么时候执行都不确定，把它放在promise对象的成功回调中。如果想让它执行，只要改变promise对象的状态即可。然后将改变状态的函数暴露给最外层的`cancer`，让程序员自己决定什么时候调用
+
+---
+
+```js
+//创建Axios
+function Axios(config) { //Axios构造函数
+    this.config = config;
+}
+Axios.prototype.request = function (config) { //request函数
+    return dispatch_request(config);
+}
+function dispatch_request(config) { //这里就不写发送请求的代码了，直接返回请求结果
+    return xhr_adapter(config);
+}
+
+//取消请求
+function cancel_token(executor) { //CancelToken构造函数（对应源码中的CancelToken.js）
+    let resolve_promise; //声明变量
+    this.promise = new Promise((resolve) => { //给实例对象添加promise属性
+        resolve_promise = resolve; //将resolve暴露出去
+    });
+    executor(function () { //将修改promise状态的函数暴露给自己写的外层变量
+        resolve_promise();
+    });
+}
+function xhr_adapter(config) { //发送请求（对应源码中的xhr.js）
+    return new Promise((resolve, reject) => {
+        //发送Ajax请求
+        const xhr = new XMLHttpRequest();
+        xhr.open(config.method, config.url);
+        xhr.send();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve({
+                        status: xhr.status,
+                        statusText: xhr.statusText
+                    });
+                } else {
+                    reject(new Error("请求失败"));
+                }
+            }
+        }
+        //给promise对象绑定then方法，取消请求
+        if (config.cancel_token) {
+            config.cancel_token.promise.then(v => {
+                xhr.abort();
+                reject(new Error("请求已被取消"));
+            });
+        }
+    });
+}
+
+//创建axios函数
+const context = new Axios({});
+const axios = Axios.prototype.request.bind(context);
+```
+```html
+<!-- 测试 -->
+<button>发送请求</button>
+<button>取消请求</button>
+<script>
+    const btns = document.querySelectorAll("button");
+    let cancel = null;
+    btns[0].addEventListener("click", () => {
+        axios({
+            method: 'GET',
+            url: 'http://127.0.0.1:9000/axios',
+            cancel_token: new cancel_token(c => cancel = c)
+        }).then(v => {
+            console.log(v)
+        }).catch(r => {
+            console.log("取消请求成功");
+        });
+    });
+    btns[1].addEventListener("click", () => {
+        console.log("点击取消请求按钮");
+        cancel();
+    });
+</script>
+```
+先成功发送一次，再取消发送一次：
+![源码分析8](./md-image/源码分析8.png){:width=80 height=80}
+##### 总结
+**1. axios和Axios的关系**：
+- 从语法上来说，axios不是Axios的实例（axios是`Axios.prototype.request.bing()`返回的函数）
+- 从功能上来说，axios是Axios的实例（axios是一个对象，且有Axios原型上所有的方法和属性）
+
+**2. instance和axios的异同**：
+instance是通过create方法创建的实例，axios也是，但它后续还添加了一些其它的方法
+- 相同
+  - 都是一个能发任意请求的函数(`request(config)`)
+  - 都有发特定请求的方法(`get()` `post()`...)
+  - 都有构造函数中添加的属性(`defaults` `interceptors`)
+- 不同
+  - 默认配置可能不同
+  - instance没有axios后续添加的方法(`create()` `CancelToken()` `all()`...)
+
+**3. axios的整体运行流程**
+![axios的整体运行流程1](./md-image/axios的整体运行流程1.png){:width=500 height=500}
+![axios的整体运行流程2](./md-image/axios的整体运行流程2.png){:width=472 height=472}
+`request(config)`->`dispatchRequest(config)`->`xhrAdapter(config)`
+- `request`：将请求拦截器/`dispatchRequest`/响应拦截器通过promise链串起来，返回promise对象
+- `dispatchRequest`：转换请求数据->调用`xhrAdapter`发请求->转换响应结果，返回promise对象
+- `xhrAdapter`：创建XHR对象，根据config发送特定请求，接收响应数据，返回promise对象
+
+**4. 请求/响应拦截器**：
+![拦截器](./md-image/拦截器.png){:width=300 height=300}
+- 请求拦截器
+  - 在真正发送请求前执行，对请求进行检查，或对配置进行特定处理
+  - 成功回调传递的参数是`config`配置对象，失败回调是`error`
+- 响应拦截器
+  - 在请求得到响应后执行，对响应结果进行特定处理
+  - 成功回调传递的参数是`response`响应结果，失败回调是`error`
+
+**5. 请求/响应数据转换器**：
+可以理解为有特定作用的拦截器
+- 请求转换器：对请求头和请求体数据进行特定处理
+    ```js
+    if (utils.isObject(data)) {
+        setContentTypeIfUnset(headers, 'application/json;charset=utf-8');
+        return JSON.stringify(data);
+    }
+    ```
+- 响应转换器：将响应体json字符串解析为js对象或数组
+    ```js
+    response.data = JSON.parse(response.data);
+    ```
+
+**6. response的整体结构**：
+```js
+{
+    data,
+    status,
+    statusText,
+    headers,
+    config,
+    request
+}
+```
+**7. error的整体结构**：
+```js
+{
+    message,
+    response,
+    request
+}
+```
+**8. 如何取消未完成的请求**：
+- 当配置了`CancelToken`对象时，保存`cancel`函数
+  - 创建一个用于将来中断请求的`promise`变量
+  - 定义了一个用于取消请求的`cancel`函数（其中包含改变`promise`状态的代码）
+  - 将`cancel`函数传递出来
+- 调用`cancel`函数取消请求
+  - 执行`cancel`函数，传入错误信息`message`
+  - 让`promise`状态变为成功，值为一个`Cancel`对象
+  - 让`promise`的成功回调中断请求，并让发送请求的promise对象失败，失败值为`Cancel`对象
